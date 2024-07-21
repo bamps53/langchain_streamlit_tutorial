@@ -5,26 +5,28 @@ from langchain_openai import ChatOpenAI
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_anthropic import ChatAnthropic
 from langchain.schema import SystemMessage, HumanMessage, AIMessage
-from langchain_core.output_parsers import JsonOutputParser
+from langchain_core.output_parsers import PydanticOutputParser
 from langchain_core.pydantic_v1 import BaseModel, Field
 
 load_dotenv()
 
-SYSTEM_MESSAGE = "あなたはOCRが得意なAIアシスタントです。画像に写っている文字を読み取って回答してください。"
+SYSTEM_MESSAGE = (
+    "あなたは画像認識が得意なAIアシスタントです。画像に写っている内容及び文字を読み取って回答してください。"
+)
 OPENAI_MODELS = ["gpt-4o-mini", "gpt-4o"]
 GOOGLE_MODELS = ["gemini-1.5-pro-latest", "gemini-1.5-flash"]
 ANTHROPIC_MODELS = ["claude-3-5-sonnet-20240620"]
 MODELS = OPENAI_MODELS + GOOGLE_MODELS + ANTHROPIC_MODELS
 
 
-class OCROutput(BaseModel):
+class VisionOutput(BaseModel):
     """Information about an image."""
 
-    image_description: str = Field(description="a short description of the image")
-    text: str = Field(description="text extracted from the image")
+    image_description: str = Field(description="簡単な画像の内容の描画")
+    text: str = Field(description="画像から抽出されたテキスト")
 
 
-parser = JsonOutputParser(pydantic_object=OCROutput)
+parser = PydanticOutputParser(pydantic_object=VisionOutput)
 
 
 def init_history():
@@ -36,11 +38,13 @@ def show_history():
         if isinstance(content, str):
             st.write(content)
         elif isinstance(content, list):
-            for item in content:
-                if item["type"] == "text":
-                    st.write(item["text"])
-                elif item["type"] == "image_url":
-                    st.image(item["image_url"]["url"], use_column_width=True)
+            text_contents = [item["text"] for item in content if item["type"] == "text"]
+            image_contents = [item["image_url"]["url"] for item in content if item["type"] == "image_url"]
+            for text_content in text_contents:
+                st.write(text_content)
+                break  # 2個目以降はFunction callingのインストラクションなのでスキップ
+            for image_content in image_contents:
+                st.image(image_content, use_column_width=True)
 
     for message in st.session_state.messages:
         if isinstance(message, SystemMessage):
@@ -85,6 +89,7 @@ def to_base64(uploaded_file):
 def create_image_message(user_input: str, images: list[str]):
     content = [
         {"type": "text", "text": user_input},
+        {"type": "text", "text": parser.get_format_instructions()},
     ]
     for image in images:
         content.append({"type": "image_url", "image_url": {"url": to_base64(image)}})
@@ -99,7 +104,7 @@ def main():
 
     with st.sidebar:
         st.session_state.images = st.file_uploader(label=" ", accept_multiple_files=True)
-        task = st.radio("Select a task", ["OCR", "Chat"])
+        task = st.radio("Select a task", ["Vision", "Chat"])
         model_name = st.radio("Select a model", MODELS)
         temperature = st.slider("Temperature", 0.0, 1.0, 0.0)
         clear_history = st.button("Clear chat history")
@@ -111,22 +116,30 @@ def main():
 
     show_history()
 
-    llm = build_llm(model_name, temperature)
-
     if user_input := st.chat_input("Type a message..."):
+        # Input
         with st.chat_message("user"):
             st.write(user_input)
-        if task == "OCR" and st.session_state.images is not None and not is_image_used_in_history():
-            for image in st.session_state.images:
-                st.image(image, use_column_width=True)
-            human_message = create_image_message(user_input, st.session_state.images)
-        else:
-            human_message = HumanMessage(content=user_input)
+            has_image = False
+            if task == "Vision" and st.session_state.images is not None and not is_image_used_in_history():
+                has_image = True
+                for image in st.session_state.images:
+                    st.image(image, use_column_width=True)
+                human_message = create_image_message(user_input, st.session_state.images)
+            else:
+                human_message = HumanMessage(content=user_input)
         st.session_state.messages.append(human_message)
 
-        stream = llm.stream(st.session_state.messages)
+        # Output
         with st.chat_message("assistant"):
-            content = st.write_stream(stream)
+            llm = build_llm(model_name, temperature)
+            stream = llm.stream(st.session_state.messages)
+            if has_image:
+                raw_json_output = st.write_stream(stream)
+                output = parser.parse(raw_json_output)
+                content = f"画像の内容: {output.image_description}\n\n画像から抽出されたテキスト: {output.text}"
+            else:
+                content = st.write_stream(stream)
         st.session_state.messages.append(AIMessage(content=content))
 
 
