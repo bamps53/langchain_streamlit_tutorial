@@ -6,3 +6,9 @@ langchain_google_genai
 langchain_groq
 langchain_anthropic
 langchain_community
+
+# web search
+duckduckgo_search
+html2text
+lxml[html_clean]
+readability-lxml

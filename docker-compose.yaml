@@ -1,0 +1,30 @@
+
+services:
+  core:
+    build:
+      dockerfile: ./Dockerfile
+      args:
+        - UID=${HOST_UID-1000}
+        - GID=${HOST_GID-1000}
+      context: .
+    restart: always
+    tty: true
+    volumes:
+      - .:/workspace
+      - /data/:/data/
+      - ~/.ssh/:/root/.ssh
+    ipc: host
+    ulimits:
+      memlock: -1
+      stack: -1
+    network_mode: "host"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              capabilities: [gpu]
+    shm_size: "64G"
+    environment:
+      - CUDA_HOME=/usr/local/cuda/
+      - TORCH_CUDA_ARCH_LIST=8.0+PTX
