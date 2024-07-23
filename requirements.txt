@@ -1,11 +1,7 @@
 streamlit
 python-dotenv
-langchain
-langchain_openai 
-langchain_google_genai
-langchain_groq
-langchain_anthropic
-langchain_community
+loguru
+streamlit_code_editor
 
 # web search
 duckduckgo_search
