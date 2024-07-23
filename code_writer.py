@@ -99,7 +99,7 @@ def main():
 
     show_history()
 
-    llm = LLM(model_name, temperature)
+    llm = LLM(model_name, temperature, json_mode=True)
 
     if user_input := st.chat_input("Type a message..."):
         with st.chat_message("user"):

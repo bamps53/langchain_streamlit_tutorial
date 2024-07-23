@@ -68,11 +68,12 @@ class AIMessage(BaseMessage):
 
 
 class LLM:
-    def __init__(self, model_name: str, temperature: float = 0.0, max_tokens: int = 8192, stream: bool = True):
+    def __init__(self, model_name: str, temperature: float = 0.0, max_tokens: int = 8192, stream: bool = True, json_mode: bool = False):
         self.model_name = model_name
         self.temperature = temperature
         self.max_tokens = max_tokens
         self.stream = stream
+        self.json_mode = json_mode
 
     def _get_messages(self, messages):
         if self.model_name in GROQ_MODELS:
@@ -86,17 +87,29 @@ class LLM:
 
         if self.model_name in OPENAI_MODELS:
             client = OpenAI()
-            return client.chat.completions.create(
-                model=self.model_name,
-                messages=messages,
-                temperature=self.temperature,
-                max_tokens=self.max_tokens,
-                top_p=1,
-                frequency_penalty=0,
-                presence_penalty=0,
-                stream=self.stream,
-            )
-
+            if self.json_mode:
+                return client.chat.completions.create(
+                    model=self.model_name,
+                    response_format={ "type": "json_object" },
+                    messages=messages,
+                    temperature=self.temperature,
+                    max_tokens=self.max_tokens,
+                    top_p=1,
+                    frequency_penalty=0,
+                    presence_penalty=0,
+                    stream=self.stream,
+                )
+            else:
+                return client.chat.completions.create(
+                    model=self.model_name,
+                    messages=messages,
+                    temperature=self.temperature,
+                    max_tokens=self.max_tokens,
+                    top_p=1,
+                    frequency_penalty=0,
+                    presence_penalty=0,
+                    stream=self.stream,
+                )
         if self.model_name in GROQ_MODELS:
             client = Groq()
             return client.chat.completions.create(
