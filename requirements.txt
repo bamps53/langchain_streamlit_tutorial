@@ -2,9 +2,3 @@ streamlit
 python-dotenv
 loguru
 streamlit_code_editor
-
-# web search
-duckduckgo_search
-html2text
-lxml[html_clean]
-readability-lxml

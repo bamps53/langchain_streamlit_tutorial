@@ -7,7 +7,7 @@ from loguru import logger
 
 OPENAI_MODELS = ["gpt-4o-mini", "gpt-4o"]
 GOOGLE_MODELS = ["gemini-1.5-pro-latest", "gemini-1.5-flash"]
-GROQ_MODELS = ["gemma2-9b-it", "llama3-groq-70b-8192-tool-use-preview"]
+GROQ_MODELS = ["gemma2-9b-it", "llama3-groq-70b-8192-tool-use-preview", "llama3-groq-8b-8192-tool-use-preview"]
 ANTHROPIC_MODELS = ["claude-3-5-sonnet-20240620"]
 MODELS = OPENAI_MODELS + GOOGLE_MODELS + GROQ_MODELS + ANTHROPIC_MODELS
 
@@ -17,14 +17,31 @@ def get_google_messages(messages):
 
     for message in messages:
         if message["role"] == "user":
-            google_messages.append({"role": "user", "parts": [message["content"][0]["text"]]})
+            google_messages.append({"role": "user", "parts": [message.content[0]["text"]]})
         elif message["role"] == "assistant":
             # TODO 画像を処理する
-            google_messages.append({"role": "model", "parts": [message["content"][0]["text"]]})
+            google_messages.append({"role": "model", "parts": [message.content[0]["text"]]})
         else:
             raise NotImplementedError()
 
     return google_messages
+
+
+def get_groq_messages(messages):
+    groq_messages = []
+
+    for message in messages:
+        logger.debug(message)
+        if isinstance(message, SystemMessage):
+            groq_messages.append({"role": "system", "content": message.content})
+        elif isinstance(message, HumanMessage):
+            groq_messages.append({"role": "user", "content": message.content})
+        elif isinstance(message, AIMessage):
+            groq_messages.append({"role": "assistant", "content": message.content})
+        else:
+            raise NotImplementedError()
+
+    return groq_messages
 
 
 class BaseMessage(BaseModel):
@@ -57,8 +74,14 @@ class LLM:
         self.max_tokens = max_tokens
         self.stream = stream
 
+    def _get_messages(self, messages):
+        if self.model_name in GROQ_MODELS:
+            return get_groq_messages(messages)
+        else:
+            return [m.as_raw_message() for m in messages]
+
     def chat(self, messages):
-        messages = [m.as_raw_message() for m in messages]
+        messages = self._get_messages(messages)
         logger.debug(messages)
 
         if self.model_name in OPENAI_MODELS:

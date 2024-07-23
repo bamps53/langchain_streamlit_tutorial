@@ -1,4 +1,7 @@
-import subprocess
+import io
+import sys
+from loguru import logger
+from matplotlib import pyplot as plt
 import streamlit as st
 from dotenv import load_dotenv
 from llm import LLM, HumanMessage, SystemMessage, AIMessage, MODELS
@@ -26,10 +29,6 @@ def show_history():
                 st.write(message.content)
 
 
-import io
-import sys
-
-
 def execute_and_capture_output(code):
     # Create a StringIO object to capture the output
     output = io.StringIO()
@@ -43,6 +42,14 @@ def execute_and_capture_output(code):
 
         # Execute the code
         exec(code)
+
+        # a hack to find out if the code contains a plot
+        if "import matplotlib.pyplot as plt" in code:
+            # Save the plot to a file
+            plot_filename = "plot.png"
+            plt.savefig(plot_filename)
+            st.image(plot_filename)
+            plt.clf()
 
         # Get the output from the StringIO object
         result = output.getvalue()
@@ -74,8 +81,8 @@ def main():
                 """)
 
     response_dict = get_code_editor("# write a pseudo code here\n")
+    logger.debug(response_dict)
 
-    st.write(response_dict)
     ret = execute_and_capture_output(response_dict["text"])
     st.write(ret)
 
