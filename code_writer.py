@@ -2,6 +2,7 @@ import io
 import json
 import os
 import sys
+import traceback
 from loguru import logger
 from matplotlib import pyplot as plt
 import streamlit as st
@@ -39,17 +40,19 @@ def execute_and_capture_output(code):
     # Create a StringIO object to capture the output
     output = io.StringIO()
 
-    # Save the current stdout
+    # Save the current stdout and stderr
     old_stdout = sys.stdout
+    old_stderr = sys.stderr
 
     try:
-        # Redirect stdout to the StringIO object
+        # Redirect stdout and stderr to the StringIO object
         sys.stdout = output
+        sys.stderr = output
 
         # Execute the code
         exec(code)
 
-        # a hack to find out if the code contains a plot
+        # A hack to find out if the code contains a plot
         if "import matplotlib.pyplot as plt" in code:
             # Save the plot to a file
             plot_filename = "plot.png"
@@ -59,15 +62,19 @@ def execute_and_capture_output(code):
 
         # Get the output from the StringIO object
         result = output.getvalue()
+        has_error = False
 
     except Exception as e:
-        result = str(e)
+        # Capture the stack trace and append it to the result
+        result = output.getvalue() + "\n" + traceback.format_exc()
+        has_error = True
 
     finally:
-        # Restore the original stdout
+        # Restore the original stdout and stderr
         sys.stdout = old_stdout
+        sys.stderr = old_stderr
 
-    return result
+    return result, has_error
 
 
 def main():
@@ -79,7 +86,7 @@ def main():
     with st.sidebar:
         session_name = st.text_input("Session name", "example")
         upload_file = st.file_uploader("Upload a file")
-        
+
         # model_name = st.radio("Select a model", MODELS)
         # temperature = st.slider("Temperature", 0.0, 1.0, 0.0)
         model_name = "gpt-4o-mini"  # しばらく固定
@@ -120,15 +127,27 @@ def main():
             st.write(user_input)
         st.session_state.messages.append(HumanMessage(content=user_input))
 
-        with st.spinner("AI is writing a code..."):
-            content = llm.chat(st.session_state.messages)
-        st.session_state.messages.append(AIMessage(content=content))
+        num_retry = 5
+        i = 0
+        while i < num_retry:
+            with st.spinner("AI is writing a code..."):
+                content = llm.chat(st.session_state.messages)
+            st.session_state.messages.append(AIMessage(content=content))
 
-        content = eval(content)  # convert to dict
-        with st.chat_message("assistant"):
-            get_code_editor(content["code"])
-            ret = execute_and_capture_output(content["code"])
-            st.write(ret)
+            content = eval(content)  # convert to dict
+            with st.chat_message("assistant"):
+                get_code_editor(content["code"])
+                ret, has_error = execute_and_capture_output(content["code"])
+                st.code(ret)
+            
+            # if there is no error, break the loop
+            if not has_error:
+                break
+            else:
+                # if there is an error, add the error message to the chat history and retry
+                st.session_state.messages.append(HumanMessage(content=ret))
+
+            i += 1
 
     # save the chat history
     with open(session_history_path, "w") as f:
