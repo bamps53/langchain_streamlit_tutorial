@@ -11,7 +11,8 @@ from editor import get_code_editor
 
 load_dotenv()
 
-DEFAULT_SYSTEM_MESSAGE = "あなたはコーディングに特化したAIアシスタントです。実行可能なpythonのコードのみを'code'領域に格納してjson形式で返してください。"
+DEFAULT_SYSTEM_MESSAGE_JA = "あなたはコーディングに特化したAIアシスタントです。実行可能なpythonのコードのみを'code'領域に格納してjson形式で返してください。"
+DEFAULT_SYSTEM_MESSAGE_EN = "You are an AI assistant specialized in coding. Please store executable Python code only in the 'code' field and return it in JSON format."
 
 
 def init_history(system_message):
@@ -77,14 +78,29 @@ def main():
 
     with st.sidebar:
         session_name = st.text_input("Session name", "example")
-        model_name = st.radio("Select a model", MODELS)
-        temperature = st.slider("Temperature", 0.0, 1.0, 0.0)
-        system_message = st.text_area("System message", DEFAULT_SYSTEM_MESSAGE, height=150)
+        upload_file = st.file_uploader("Upload a file")
+        
+        # model_name = st.radio("Select a model", MODELS)
+        # temperature = st.slider("Temperature", 0.0, 1.0, 0.0)
+        model_name = "gpt-4o-mini"  # しばらく固定
+        temperature = 0.0  # しばらく固定
+
+        language = st.radio("Select a language", ["Japanese", "English"])
+        if language == "English":
+            system_message = st.text_area("System message", DEFAULT_SYSTEM_MESSAGE_EN, height=150)
+        else:
+            system_message = st.text_area("System message", DEFAULT_SYSTEM_MESSAGE_JA, height=150)
+
         clear_history = st.button("Clear chat history")
 
     # Create a directory for the session
     session_dir = f"sessions/{session_name}"
     os.makedirs(session_dir, exist_ok=True)
+
+    # save uploaded file
+    if upload_file:
+        with open(f"{session_dir}/{upload_file.name}", "wb") as f:
+            f.write(upload_file.getbuffer())
 
     # Load the chat history
     session_history_path = f"{session_dir}/history.json"
