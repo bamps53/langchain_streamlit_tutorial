@@ -2,3 +2,4 @@ streamlit
 python-dotenv
 loguru
 streamlit_code_editor
+ipdb

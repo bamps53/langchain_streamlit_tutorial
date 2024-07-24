@@ -67,8 +67,26 @@ class AIMessage(BaseMessage):
     content: str
 
 
+def from_raw_message(raw_message):
+    if raw_message["role"] == "system":
+        return SystemMessage(content=raw_message["content"][0]["text"])
+    elif raw_message["role"] == "user":
+        return HumanMessage(content=raw_message["content"][0]["text"])
+    elif raw_message["role"] == "assistant":
+        return AIMessage(content=raw_message["content"][0]["text"])
+    else:
+        raise NotImplementedError()
+
+
 class LLM:
-    def __init__(self, model_name: str, temperature: float = 0.0, max_tokens: int = 8192, stream: bool = True, json_mode: bool = False):
+    def __init__(
+        self,
+        model_name: str,
+        temperature: float = 0.0,
+        max_tokens: int = 8192,
+        stream: bool = True,
+        json_mode: bool = False,
+    ):
         self.model_name = model_name
         self.temperature = temperature
         self.max_tokens = max_tokens
@@ -88,9 +106,9 @@ class LLM:
         if self.model_name in OPENAI_MODELS:
             client = OpenAI()
             if self.json_mode:
-                return client.chat.completions.create(
+                response = client.chat.completions.create(
                     model=self.model_name,
-                    response_format={ "type": "json_object" },
+                    response_format={"type": "json_object"},
                     messages=messages,
                     temperature=self.temperature,
                     max_tokens=self.max_tokens,
@@ -100,7 +118,7 @@ class LLM:
                     stream=self.stream,
                 )
             else:
-                return client.chat.completions.create(
+                response = client.chat.completions.create(
                     model=self.model_name,
                     messages=messages,
                     temperature=self.temperature,
@@ -110,6 +128,11 @@ class LLM:
                     presence_penalty=0,
                     stream=self.stream,
                 )
+            if self.stream:
+                return response
+            else:
+                return response.choices[0].message.content
+
         if self.model_name in GROQ_MODELS:
             client = Groq()
             return client.chat.completions.create(
