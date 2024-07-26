@@ -2,6 +2,7 @@
 https://github.com/allenai/visprog
 https://github.com/OpenDevin/OpenDevin
 web search
+session_name変えたときに会話履歴リセット
 
 ## Code Writerの動作
 1. 人間が自然言語で仕様を入力する

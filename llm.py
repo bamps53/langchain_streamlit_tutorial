@@ -67,6 +67,11 @@ class AIMessage(BaseMessage):
     content: str
 
 
+class EnvMessage(BaseMessage):
+    roll: str = "env"
+    content: str
+
+
 def from_raw_message(raw_message):
     if raw_message["role"] == "system":
         return SystemMessage(content=raw_message["content"][0]["text"])
@@ -74,6 +79,8 @@ def from_raw_message(raw_message):
         return HumanMessage(content=raw_message["content"][0]["text"])
     elif raw_message["role"] == "assistant":
         return AIMessage(content=raw_message["content"][0]["text"])
+    elif raw_message["role"] == "env":
+        return EnvMessage(content=raw_message["content"][0]["text"])
     else:
         raise NotImplementedError()
 
@@ -97,7 +104,7 @@ class LLM:
         if self.model_name in GROQ_MODELS:
             return get_groq_messages(messages)
         else:
-            return [m.as_raw_message() for m in messages]
+            return [m.as_raw_message() for m in messages if not isinstance(m, EnvMessage)]
 
     def chat(self, messages):
         messages = self._get_messages(messages)

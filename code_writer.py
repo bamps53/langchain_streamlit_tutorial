@@ -1,19 +1,44 @@
 import io
 import json
 import os
+import subprocess
 import sys
 import traceback
 from loguru import logger
 from matplotlib import pyplot as plt
 import streamlit as st
 from dotenv import load_dotenv
-from llm import LLM, HumanMessage, SystemMessage, AIMessage, MODELS, from_raw_message
+from llm import LLM, EnvMessage, HumanMessage, SystemMessage, AIMessage, from_raw_message
 from editor import get_code_editor
 
 load_dotenv()
 
-DEFAULT_SYSTEM_MESSAGE_JA = "あなたはコーディングに特化したAIアシスタントです。実行可能なpythonのコードのみを'code'領域に格納してjson形式で返してください。"
-DEFAULT_SYSTEM_MESSAGE_EN = "You are an AI assistant specialized in coding. Please store executable Python code only in the 'code' field and return it in JSON format."
+ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
+if ROOT_DIR not in sys.path:
+    sys.path.append(ROOT_DIR)
+
+JSON_SCHEMA_JA = {
+    "type": "object",
+    "properties": {
+        "code": {"type": "string", "description": "そのまま実行可能なコード"},
+        "language": {"type": "string", "description": "コードの言語 (python or sh)"},
+        # "response": {"type": "string", "description": "ユーザーへの返答"},
+    },
+    "required": ["code", "language"],
+}
+
+JSON_SCHEMA_EN = {
+    "type": "object",
+    "properties": {
+        "code": {"type": "string", "description": "Executable code"},
+        "language": {"type": "string", "description": "Language of the code (python or sh)"},
+        # "response": {"type": "string", "description": "Response to the user"},
+    },
+    "required": ["code", "language"],
+}
+
+DEFAULT_SYSTEM_MESSAGE_JA = f"あなたはコーディングに特化したAIアシスタントです。以下のスキーマに従ったJSON形式でコードを記述してください。\n\n```json\n{json.dumps(JSON_SCHEMA_JA, indent=2, ensure_ascii=False)}\n```"  # noqa: E501
+DEFAULT_SYSTEM_MESSAGE_EN = f"You are an AI assistant specialized in coding. Please write the code in JSON format according to the following schema.\n\n```json\n{json.dumps(JSON_SCHEMA_EN, indent=2)}\n```"  # noqa: E501
 
 
 def init_history(system_message):
@@ -30,54 +55,80 @@ def show_history():
         elif isinstance(message, AIMessage):
             with st.chat_message("assistant"):
                 content = eval(message.content)
+                if "response" in content:
+                    st.write(content["response"])
                 if "code" in content:
-                    get_code_editor(content["code"])
+                    get_code_editor(content["code"], content["language"])
                 else:
                     st.write(content)
+        elif isinstance(message, EnvMessage):
+            with st.chat_message("env", avatar="🖥"):
+                st.code(message.content)
 
 
-def execute_and_capture_output(code):
-    # Create a StringIO object to capture the output
-    output = io.StringIO()
+def execute_and_capture_output(code, language):
+    if language == "python":
+        # Create a StringIO object to capture the output
+        output = io.StringIO()
 
-    # Save the current stdout and stderr
-    old_stdout = sys.stdout
-    old_stderr = sys.stderr
+        # Save the current stdout and stderr
+        old_stdout = sys.stdout
+        old_stderr = sys.stderr
 
-    try:
-        # Redirect stdout and stderr to the StringIO object
-        sys.stdout = output
-        sys.stderr = output
+        try:
+            # Redirect stdout and stderr to the StringIO object
+            sys.stdout = output
+            sys.stderr = output
 
-        # Execute the code
-        exec(code)
+            exec(code)
 
-        # A hack to find out if the code contains a plot
-        if "import matplotlib.pyplot as plt" in code:
-            # Save the plot to a file
-            plot_filename = "plot.png"
-            plt.savefig(plot_filename)
-            st.image(plot_filename)
-            plt.clf()
+            # A hack to find out if the code contains a plot
+            if "import matplotlib.pyplot as plt" in code:
+                # Save the plot to a file
+                plot_filename = "plot.png"
+                plt.savefig(plot_filename)
+                st.image(plot_filename)
+                plt.clf()
 
-        # Get the output from the StringIO object
-        result = output.getvalue()
-        has_error = False
+            # Get the output from the StringIO object
+            result = output.getvalue()
+            has_error = False
 
-    except Exception as e:
-        # Capture the stack trace and append it to the result
-        result = output.getvalue() + "\n" + traceback.format_exc()
-        has_error = True
+        except Exception as e:
+            # Capture the stack trace and append it to the result
+            result = output.getvalue() + "\n" + traceback.format_exc()
+            has_error = True
 
-    finally:
-        # Restore the original stdout and stderr
-        sys.stdout = old_stdout
-        sys.stderr = old_stderr
+        finally:
+            # Restore the original stdout and stderr
+            sys.stdout = old_stdout
+            sys.stderr = old_stderr
 
-    return result, has_error
+        return result, has_error
+
+    elif language == "sh":
+        try:
+            # Run the shell script
+            result = subprocess.run(["bash", "-c", code], capture_output=True, text=True)
+
+            has_error = result.returncode != 0
+
+            # Capture standard output and standard error
+            stdout = result.stdout
+            stderr = result.stderr
+
+            return stdout + stderr, has_error
+        except Exception as e:
+            # Capture any exception that occurs and its stack trace
+            return str(e), True
+
+    else:
+        return "Unsupported language", True
 
 
 def main():
+    os.chdir(ROOT_DIR)  # Change the current working directory to the root directory
+
     st.set_page_config(
         page_title="Code Writer",
         page_icon="🤖",
@@ -92,7 +143,7 @@ def main():
         model_name = "gpt-4o-mini"  # しばらく固定
         temperature = 0.0  # しばらく固定
 
-        language = st.radio("Select a language", ["Japanese", "English"])
+        language = st.radio("Select a language", ["English", "Japanese"])
         if language == "English":
             system_message = st.text_area("System message", DEFAULT_SYSTEM_MESSAGE_EN, height=150)
         else:
@@ -101,8 +152,9 @@ def main():
         clear_history = st.button("Clear chat history")
 
     # Create a directory for the session
-    session_dir = f"sessions/{session_name}"
+    session_dir = f"{ROOT_DIR}/sessions/{session_name}"
     os.makedirs(session_dir, exist_ok=True)
+    os.chdir(session_dir)  # Change the current working directory to the session directory
 
     # save uploaded file
     if upload_file:
@@ -132,14 +184,20 @@ def main():
         while i < num_retry:
             with st.spinner("AI is writing a code..."):
                 content = llm.chat(st.session_state.messages)
-            st.session_state.messages.append(AIMessage(content=content))
+                st.session_state.messages.append(AIMessage(content=content))
+                content = eval(content)  # convert to dict
+                logger.debug(content)
 
-            content = eval(content)  # convert to dict
             with st.chat_message("assistant"):
-                get_code_editor(content["code"])
-                ret, has_error = execute_and_capture_output(content["code"])
+                if "response" in content:
+                    st.write(content["response"])
+                get_code_editor(content["code"], language=content["language"])
+
+            with st.chat_message("env", avatar="🖥"):
+                ret, has_error = execute_and_capture_output(content["code"], content["language"])
                 st.code(ret)
-            
+                st.session_state.messages.append(EnvMessage(content=ret))
+
             # if there is no error, break the loop
             if not has_error:
                 break
