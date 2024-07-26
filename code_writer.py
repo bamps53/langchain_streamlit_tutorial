@@ -66,6 +66,17 @@ def show_history():
                 st.code(message.content)
 
 
+def postprocess(content):
+    content = eval(content)  # convert to dict
+
+    # replace invalid line endings
+    content["code"] = content["code"].replace("\r\n", "\n")
+    content["code"] = content["code"].replace("\r", "\n")
+    content["code"] = content["code"].replace("\\n", "\n")
+
+    return content
+
+
 def execute_and_capture_output(code, language):
     if language == "python":
         # Create a StringIO object to capture the output
@@ -185,7 +196,7 @@ def main():
             with st.spinner("AI is writing a code..."):
                 content = llm.chat(st.session_state.messages)
                 st.session_state.messages.append(AIMessage(content=content))
-                content = eval(content)  # convert to dict
+                content = postprocess(content)
                 logger.debug(content)
 
             with st.chat_message("assistant"):
